@@ -202,13 +202,22 @@ body.theme6 {
 *   🌸 **樱花飘落**：使用纯数学贝塞尔曲线动态绘制花瓣。
 *   ✨ **星光拖尾**：随鼠标移动生成的炫彩粒子跟随拖尾。
 *   ❤️ **爱心浮动**：鼠标点击页面任意位置，生成随机颜色的爱心并上浮。
+*   ❤️ **背景音乐播放**：网页打开自动单曲循环设置的背景音乐。
 ```html
-<!-- =========================================================
-     全套原生纯 JS 特效 (樱花 + 鼠标星光拖尾 + 鼠标点击爱心)
-     0 外部依赖，0 图片加载，极速渲染，永久生效！
-========================================================== -->
+<audio id="bgm" autoplay loop preload="auto" style="display:none;">
+    <source src="https://music.163.com/song/media/outer/url?id=2126773572.mp3" type="audio/mpeg">
+</audio>
+
 <script>
-// 1. 🌸 纯原生 Canvas 樱花飘落特效 (纯数学贝塞尔曲线绘制花瓣)
+// 1. 强制自动播放逻辑 (监听用户交互触发)
+window.addEventListener('click', () => {
+    const audio = document.getElementById('bgm');
+    if (audio.paused) {
+        audio.play().catch(e => console.log("等待用户交互开始播放"));
+    }
+}, { once: true });
+
+// 2. 🌸 纯原生 Canvas 樱花飘落特效
 !function(){
   var canvas = document.createElement("canvas");
   canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999997";
@@ -235,7 +244,7 @@ body.theme6 {
   render();
 }();
 
-// 2. ✨ 纯原生 Canvas 鼠标烟花/星光拖尾特效
+// 3. ✨ 纯原生 Canvas 鼠标烟花/星光拖尾特效
 !function(){
   var canvas = document.createElement("canvas");
   canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999998";
@@ -261,7 +270,7 @@ body.theme6 {
   render();
 }();
 
-// 3. ❤️ 纯原生 DOM 鼠标点击爱心上浮特效
+// 4. ❤️ 纯原生 DOM 鼠标点击爱心上浮特效
 !function(e,t,a){function n(){c(".heart{width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: fixed;}.heart:after{top: -5px;}.heart:before{left: -5px;}"),o(),r()}function r(){for(var e=0;e<d.length;e++)d[e].alpha<=0?(t.body.removeChild(d[e].el),d.splice(e,1)):(d[e].y--,d[e].scale+=.004,d[e].alpha-=.013,d[e].el.style.cssText="left:"+d[e].x+"px;top:"+d[e].y+"px;opacity:"+d[e].alpha+";transform:scale("+d[e].scale+","+d[e].scale+") rotate(45deg);background:"+d[e].color+";z-index:9999999");requestAnimationFrame(r)}function o(){var t="function"==typeof e.onclick&&e.onclick;e.onclick=function(e){t&&t(),i(e)}}function i(e){var a=t.createElement("div");a.className="heart",d.push({el:a,x:e.clientX-5,y:e.clientY-5,scale:1,alpha:1,color:s()}),t.body.appendChild(a)}function c(e){var a=t.createElement("style");a.type="text/css";try{a.appendChild(t.createTextNode(e))}catch(t){a.styleSheet.cssText=e}t.getElementsByTagName("head")[0].appendChild(a)}function s(){return"rgb("+~~(255*Math.random())+","+~~(255*Math.random())+","+~~(255*Math.random())+")"}var d=[];e.requestAnimationFrame=function(){return e.requestAnimationFrame||e.webkitRequestAnimationFrame||e.mozRequestAnimationFrame||e.oRequestAnimationFrame||e.msRequestAnimationFrame||function(e){setTimeout(e,1e3/60)}}(),n()}(window,document);
 </script>
 ```
