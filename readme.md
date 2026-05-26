@@ -7,7 +7,7 @@
 10台VPS以下可以使用cf版本轻量部署，10台VPS以上建议使用docker部署在免费容器northflank https://github.com/a63414262/server-monitor
 
 演示站点：https://tanzhen.kejikkk.com
-alpine测试版本，已支持alpine系统挂载探针
+已添加支持alpine系统挂载探针，已个性化CSS设置，已添加网易云外链单曲循环，可通过CSS代码实现个性化探针主题实现
 
 基于 Cloudflare Workers 和 D1 数据库构建的轻量级、零成本、高定制化的服务器探针大盘。
 完美复刻了商业级探针（如 Nezha）的核心体验，但无需额外部署任何服务端 VPS！完全白嫖 Cloudflare 的免费 Serverless 资源。
@@ -19,7 +19,7 @@ alpine测试版本，已支持alpine系统挂载探针
 - **国旗智能匹配**：依托 Cloudflare 全球网络，自动识别 VPS 归属地并渲染超清图片国旗。
 - **无感 AJAX 热更新**：彻底抛弃传统的 <meta refresh>，采用 DOM 局部替换技术，数据实时跳动，页面零闪烁。
 - **多维视图切换**：内置 卡片 (Card)、表格 (Table) 和 世界地图 (Map) 三种视图，使用 LocalStorage 自动记忆用户偏好。
-
+- **管理后台新增**： Agent 上报间隔自定义设置，指定VPS前台显示或隐藏，添加对alpine系统的支持，可自动生成不同系统架构的一键探针命令。
 ### 📊 专业级监控与大盘展示
 - **全局顶栏大盘**：直观展示服务器总数、在线/离线数、总计流量（入/出）以及全网实时网速。
 - **硬核双栈检测**：自动探测并高亮打标 VPS 的 **IPv4** 与 **IPv6** 网络连通性。
