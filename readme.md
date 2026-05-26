@@ -156,41 +156,64 @@ body.theme6 #app-container { display: none !important; }
 
 将以下代码填入后台的 **「自定义 CSS 代码」** 输入框中，即可实现超清动漫壁纸与全站半透明毛玻璃卡片效果：
 ```css
-/* 1. 网页全局二次元背景图 (换了一个保证能访问的超清动漫壁纸) */
+/* 1. 网页全局二次元背景图 */
 body.theme6 {
-  background: url('https://imgapi.cn/api.php?fl=dongman&=4k') no-repeat center center fixed !important;
+  background: url('https://i.33xp.cn/__imgapi.cn__/__imgapi.cn__5d19cf2105e31.jpg') no-repeat center center fixed !important;
   background-size: cover !important;
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* 2. 卡片半透明效果 */
+/* 2. 卡片半透明效果 (新增了详情页的支持) */
 .theme6 .vps-card, 
 .theme6 .global-stats, 
 .theme6 .custom-table, 
 .theme6 .header,
-.theme6 .view-controls {
+.theme6 .view-controls,
+.theme6 .header-card,  /* 详情页：顶部信息卡片 */
+.theme6 .chart-card    /* 详情页：各个图表卡片 */
+{
   background-color: rgba(250, 250, 250, 0.65) !important; 
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;
   border-radius: 0.6rem !important;
   border: 1px solid rgba(255, 255, 255, 0.4) !important;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05) !important;
+  transition: all 0.3s ease; /* 增加平滑过渡 */
 }
 
 /* 3. 悬停卡片时的浮动反馈 */
-.theme6 .vps-card:hover {
+.theme6 .vps-card:hover,
+.theme6 .chart-card:hover {
   background-color: rgba(255, 255, 255, 0.85) !important;
 }
 
 /* 4. 进度条颜色统一改为经典的 Nezha 绿色 (#21ba45) */
-.theme6 .stat-bar > div {
+.theme6 .stat-bar > div,
+.theme6 #disk-bar { /* 详情页：磁盘进度条 */
   background-color: #21ba45 !important;
 }
 
 /* 5. 调整文字和图标颜色适配浅色半透明背景 */
-.theme6 .stat-label, .theme6 .g-label, .theme6 .card-meta { color: #555 !important; }
-.theme6 .stat-val, .theme6 .g-val, .theme6 .card-title-text { color: #000 !important; }
-.theme6 .group-header { color: #fff !important; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+.theme6 .stat-label, 
+.theme6 .g-label, 
+.theme6 .card-meta, 
+.theme6 .info-label { 
+  color: #555 !important; 
+}
+
+.theme6 .stat-val, 
+.theme6 .g-val, 
+.theme6 .card-title-text, 
+.theme6 .info-value, 
+.theme6 .chart-card h3 { 
+  color: #111 !important; 
+  font-weight: bold !important;
+}
+
+.theme6 .group-header { 
+  color: #fff !important; 
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+}
 ```
 
 ### ✨ 炫酷动态特效注入 (0 依赖纯原生)
