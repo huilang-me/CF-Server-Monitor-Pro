@@ -147,8 +147,12 @@ export default {
       } catch (e) {}
     };
 
-    const footerHtml = `
+    const getFooterHtml = (sys) => `
       <div style="text-align: center; margin-top: 40px; padding-bottom: 20px; font-size: 13px; color: inherit; opacity: 0.8;">
+        <div style="margin-bottom: 8px;">
+            <span style="margin-right: 15px;">👁️ 历史总访问：<b style="color: #3b82f6;">${sys.visits_total || 0}</b> 次</span>
+            <span>🔥 今日访问：<b style="color: #10b981;">${sys.visits_today || 0}</b> 次</span>
+        </div>
         Powered by <a href="https://github.com/a63414262/CF-Server-Monitor-Pro" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">CF-Server-Monitor-Pro</a> | 
         <a href="https://www.youtube.com/@%E5%B0%8FK%E5%88%86%E4%BA%AB" target="_blank" style="color: #ef4444; text-decoration: none; font-weight: 600;">▶️ 小K分享频道</a>
       </div>
@@ -516,7 +520,7 @@ export default {
           </div>
         </div>
         
-        ${footerHtml}
+        ${getFooterHtml(sys)}
 
         <script>
           function toggleCustomCss() {
@@ -952,6 +956,48 @@ echo "✅ Linux 探针安装成功！"
         return authResponse(sys.site_title);
       }
 
+      // ==========================================
+      // 访问量统计逻辑 (避免 Ajax/接口 刷新被意外记录)
+      // ==========================================
+      const isAjax = url.searchParams.get('ajax') === '1';
+      if (!isAjax) {
+        // 使用东八区时间计算当前日期
+        const nowTime = new Date();
+        const tzOffset = 8 * 60 * 60000; 
+        const localNow = new Date(nowTime.getTime() + tzOffset);
+        const todayStr = `${localNow.getFullYear()}-${localNow.getMonth() + 1}-${localNow.getDate()}`;
+        
+        let vTotal = parseInt(sys.visits_total || '0');
+        let vToday = parseInt(sys.visits_today || '0');
+        let vDate = sys.visits_date || '';
+        
+        vTotal++;
+        if (vDate !== todayStr) {
+            vToday = 1; // 跨天重置
+            vDate = todayStr;
+        } else {
+            vToday++;
+        }
+        
+        // 更新内存状态，保证页面能立即渲染最新数值
+        sys.visits_total = vTotal.toString();
+        sys.visits_today = vToday.toString();
+        sys.visits_date = todayStr;
+
+        // 通过 waitUntil 后台静默保存到 D1 数据库，不阻塞页面返回
+        const updateVisits = async () => {
+            try {
+                await env.DB.prepare(`
+                    INSERT INTO settings (key, value) VALUES ('visits_total', ?), ('visits_today', ?), ('visits_date', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                `).bind(vTotal.toString(), vToday.toString(), todayStr).run();
+            } catch(e) {
+                console.error("更新访问量失败", e);
+            }
+        };
+        ctx.waitUntil(updateVisits());
+      }
+      
       const viewId = url.searchParams.get('id');
 
       if (viewId) {
@@ -1021,7 +1067,7 @@ echo "✅ Linux 探针安装成功！"
                 <canvas id="chartPing"></canvas>
               </div>
             </div>
-            ${footerHtml}
+            ${getFooterHtml(sys)}
           </div>
           <script>
             const serverId = "${viewId}";
@@ -1423,7 +1469,7 @@ echo "✅ Linux 探针安装成功！"
             <div id="map-container"></div>
           </div>
           
-          ${footerHtml}
+          ${getFooterHtml(sys)}
         </div>
 
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -1536,9 +1582,12 @@ echo "✅ Linux 探针安装成功！"
              switchView(savedView);
           });
 
+          // 【新增修改】：为了防止 AJAX 自动刷新导致后端访问量虚高，每次自动刷新强制带上 ?ajax=1 标记
           setInterval(async () => {
             try {
-              const res = await fetch(location.href);
+              const currentUrl = new URL(location.href);
+              currentUrl.searchParams.set('ajax', '1');
+              const res = await fetch(currentUrl.toString());
               const htmlText = await res.text();
               const parser = new DOMParser();
               const newDoc = parser.parseFromString(htmlText, 'text/html');
