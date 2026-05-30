@@ -87,6 +87,14 @@ export default {
           )
         `).run();
 
+        // 防双花/状态绝对一致性核心表：已执行交易流水
+        await env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS executed_txs (
+            tx_id TEXT PRIMARY KEY, 
+            timestamp INTEGER
+          )
+        `).run();
+
         await env.DB.prepare(`
           INSERT INTO blockchain_peers (domain, is_beacon, last_seen, reputation_score) 
           VALUES (?, 'true', ?, 9999) ON CONFLICT(domain) DO UPDATE SET is_beacon='true', reputation_score=9999
@@ -162,22 +170,30 @@ export default {
         return { amount, remValue };
     };
 
-    // 执行状态机交易结算 (处理入账出账)
+    // 状态机交易结算 (严格防双花与防重放)
     const processBlockTransactions = async (txs) => {
         if (!txs || !Array.isArray(txs)) return;
+        let txIdsToDelete = [];
         for (const tx of txs) {
+            if (!tx || !tx.id) continue;
             try {
-                if (tx.from) {
-                    await env.DB.prepare('INSERT INTO blockchain_wallets (address, balance) VALUES (?, 0) ON CONFLICT(address) DO UPDATE SET balance = balance - ?').bind(tx.from, tx.amount).run();
+                // 核心防线：检查是否已经执行过该笔交易
+                const exist = await env.DB.prepare('SELECT tx_id FROM executed_txs WHERE tx_id = ?').bind(tx.id).first();
+                if (!exist) {
+                    await env.DB.prepare('INSERT INTO executed_txs (tx_id, timestamp) VALUES (?, ?)').bind(tx.id, Date.now()).run();
+                    
+                    if (tx.from) {
+                        await env.DB.prepare('INSERT INTO blockchain_wallets (address, balance) VALUES (?, 0) ON CONFLICT(address) DO UPDATE SET balance = balance - ?').bind(tx.from, tx.amount).run();
+                    }
+                    if (tx.to) {
+                        await env.DB.prepare('INSERT INTO blockchain_wallets (address, balance) VALUES (?, ?) ON CONFLICT(address) DO UPDATE SET balance = balance + ?').bind(tx.to, tx.amount, tx.amount).run();
+                    }
                 }
-                if (tx.to) {
-                    await env.DB.prepare('INSERT INTO blockchain_wallets (address, balance) VALUES (?, ?) ON CONFLICT(address) DO UPDATE SET balance = balance + ?').bind(tx.to, tx.amount, tx.amount).run();
-                }
+                txIdsToDelete.push(`'${tx.id}'`);
             } catch(e) {}
         }
-        const txIds = txs.filter(t => t.id).map(t => `'${t.id}'`).join(',');
-        if (txIds) {
-            await env.DB.prepare(`DELETE FROM mempool WHERE tx_id IN (${txIds})`).run();
+        if (txIdsToDelete.length > 0) {
+            await env.DB.prepare(`DELETE FROM mempool WHERE tx_id IN (${txIdsToDelete.join(',')})`).run();
         }
     };
 
@@ -272,43 +288,34 @@ export default {
                     return new Response('Block from future rejected', { status: 400 });
                 }
 
-                const currentBlock = await env.DB.prepare('SELECT payload FROM blockchain_ledger WHERE slot_id = ?').bind(block.slot_id).first();
-                let shouldInsert = true;
+                const currentBlock = await env.DB.prepare('SELECT slot_id FROM blockchain_ledger WHERE slot_id = ?').bind(block.slot_id).first();
                 
-                if (currentBlock) {
-                    const currentPayload = JSON.parse(currentBlock.payload);
-                    const incomingPayload = JSON.parse(block.payload);
-                    if ((parseFloat(incomingPayload.total_asset)||0) <= (parseFloat(currentPayload.total_asset)||0)) {
-                        shouldInsert = false; 
-                    }
-                }
-                
-                if (shouldInsert) {
+                // 解决区块不一致的终极方案：先到先得，不覆盖旧区块。避免节点来回跳跃产生分叉。
+                if (!currentBlock) {
                     await env.DB.prepare(`
-                        INSERT OR REPLACE INTO blockchain_ledger (slot_id, proposer_domain, block_hash, payload, timestamp) 
+                        INSERT INTO blockchain_ledger (slot_id, proposer_domain, block_hash, payload, timestamp) 
                         VALUES (?, ?, ?, ?, ?)
                     `).bind(block.slot_id, block.proposer_domain, block.block_hash, block.payload, Date.now()).run();
                     
                     const pl = JSON.parse(block.payload);
-                    const safeTotalAsset = Math.min(parseFloat(pl.total_asset)||0, 100000000); // 接收别人区块时，限制同步过来的资产上限
+                    const safeTotalAsset = Math.min(parseFloat(pl.total_asset)||0, 100000000); 
                     await env.DB.prepare(`
                         INSERT INTO blockchain_peers (domain, vps_count, total_asset, last_seen) 
                         VALUES (?, ?, ?, ?) 
                         ON CONFLICT(domain) DO UPDATE SET vps_count=excluded.vps_count, total_asset=excluded.total_asset, last_seen=excluded.last_seen
                     `).bind(block.proposer_domain, parseInt(pl.vps_count)||0, safeTotalAsset, Date.now()).run();
                     
-                    // 状态机结算
                     if (pl.txs) await processBlockTransactions(pl.txs);
                 }
                 return new Response('Consensus Accepted', { status: 200, headers: {'Access-Control-Allow-Origin':'*'} });
             } catch(e) { return new Response('Block Reject', { status: 400 }); }
         }
         
-        // 接收广播交易进入内存池
+        // 接收广播交易进入内存池 (后台管理员直接广播)
         if (request.method === 'POST' && route === 'tx') {
             try {
                 const data = await request.json();
-                const tx = data.tx || data; // 兼容不同格式
+                const tx = data.tx || data; 
 
                 if (!tx || !tx.from || !tx.to || !tx.amount || tx.amount <= 0) throw new Error("Invalid Tx Payload");
 
@@ -336,9 +343,10 @@ export default {
                 const { results: pendingTxs } = await env.DB.prepare('SELECT payload FROM mempool ORDER BY timestamp ASC LIMIT 20').all();
                 let blockTxs = pendingTxs.map(t => JSON.parse(t.payload));
                 
-                // 出块奖励 1 Cycle
+                // 出块奖励 1 Cycle (使用 deterministic ID 防多节点打包产生重复奖励)
                 if (sys.miner_wallet) {
-                    blockTxs.push({ id: crypto.randomUUID(), type: 'COINBASE', to: sys.miner_wallet, amount: 1, timestamp: Date.now() });
+                    const coinbaseId = 'cb-' + currentSlot + '-' + await miniHash(host);
+                    blockTxs.push({ id: coinbaseId, type: 'COINBASE', to: sys.miner_wallet, amount: 1, timestamp: Date.now() });
                 }
 
                 const payloadStr = JSON.stringify({ vps_count: localVpsCount, total_asset: localAsset, txs: blockTxs });
@@ -348,25 +356,29 @@ export default {
                 for (const b of beacons) {
                     fetch(`${b.domain}/api/consensus/submit`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(blockData) }).catch(() => {});
                 }
-                await env.DB.prepare(`INSERT OR REPLACE INTO blockchain_ledger (slot_id, proposer_domain, block_hash, payload, timestamp) VALUES (?, ?, ?, ?, ?)`).bind(currentSlot, host, hash, payloadStr, Date.now()).run();
                 
-                // 本地执行结算
-                await processBlockTransactions(blockTxs);
+                const currentBlock = await env.DB.prepare('SELECT slot_id FROM blockchain_ledger WHERE slot_id = ?').bind(currentSlot).first();
+                if (!currentBlock) {
+                    await env.DB.prepare(`INSERT INTO blockchain_ledger (slot_id, proposer_domain, block_hash, payload, timestamp) VALUES (?, ?, ?, ?, ?)`).bind(currentSlot, host, hash, payloadStr, Date.now()).run();
+                    await processBlockTransactions(blockTxs);
+                }
             }
 
             const syncFromPeer = async (peerDomain) => {
-                const localTop = await env.DB.prepare('SELECT slot_id FROM blockchain_ledger ORDER BY slot_id DESC LIMIT 1').first();
-                const since = localTop ? localTop.slot_id : 0;
+                const currentSlotNow = Math.max(1, Math.floor((Date.now() - EPOCH_START) / SLOT_TIME));
+                // 强势向后追溯 200 个块 (约33分钟的断网容错) 填补空缺
+                const since = Math.max(0, currentSlotNow - 200);
+                
                 try {
                     const syncRes = await fetch(`${peerDomain}/api/consensus/sync?since_slot=${since}`);
                     if (syncRes.ok) {
                         const syncData = await syncRes.json();
                         for (const b of syncData.blocks) {
-                            if (b.slot_id <= currentSlot + 2) {
-                                // 增加 exist 判定，防止重复执行交易导致余额翻倍
+                            if (b.slot_id <= currentSlotNow + 2) {
+                                // 增加 exist 判定，严格保证本节点一条时间线，不被新来的块乱覆盖
                                 const exist = await env.DB.prepare('SELECT slot_id FROM blockchain_ledger WHERE slot_id = ?').bind(b.slot_id).first();
                                 if (!exist) {
-                                    await env.DB.prepare(`INSERT OR REPLACE INTO blockchain_ledger (slot_id, proposer_domain, block_hash, payload, timestamp) VALUES (?, ?, ?, ?, ?)`).bind(b.slot_id, b.proposer_domain, b.block_hash, b.payload, b.timestamp).run();
+                                    await env.DB.prepare(`INSERT INTO blockchain_ledger (slot_id, proposer_domain, block_hash, payload, timestamp) VALUES (?, ?, ?, ?, ?)`).bind(b.slot_id, b.proposer_domain, b.block_hash, b.payload, b.timestamp).run();
                                     const pl = JSON.parse(b.payload);
                                     const safeTotalAsset = Math.min(parseFloat(pl.total_asset)||0, 100000000);
                                     await env.DB.prepare(`INSERT INTO blockchain_peers (domain, vps_count, total_asset, last_seen) VALUES (?, ?, ?, ?) ON CONFLICT(domain) DO UPDATE SET vps_count=excluded.vps_count, total_asset=excluded.total_asset, last_seen=excluded.last_seen`).bind(b.proposer_domain, parseInt(pl.vps_count)||0, safeTotalAsset, b.timestamp).run();
@@ -499,7 +511,7 @@ export default {
       .theme4 .os-text { color: #eee; }
 
       body.theme5 { background-color: #050505; color: #0ff; font-family: 'Courier New', Courier, monospace; }
-      .theme5 .vps-card, .theme5 .global-stats, .header-card, .theme5 .chart-card { background: #0b0c10; border: 1px solid #f0f; border-radius: 0; box-shadow: 0 0 10px rgba(255, 0, 255, 0.2); color: #fff; }
+      .theme5 .vps-card, .theme5 .global-stats, .theme5 .header-card, .theme5 .chart-card { background: #0b0c10; border: 1px solid #f0f; border-radius: 0; box-shadow: 0 0 10px rgba(255, 0, 255, 0.2); color: #fff; }
       .theme5 .vps-card:hover { box-shadow: 0 0 20px rgba(0, 255, 255, 0.5); border-color: #0ff; }
       .theme5 .group-header { color: #f0f; border-left: 5px solid #0ff; text-shadow: 0 0 5px #f0f; }
       .theme5 .stat-val, .theme5 .g-val, .theme5 .card-title { color: #0ff; text-shadow: 0 0 5px #0ff; }
@@ -1415,9 +1427,7 @@ cq-ct-dualstack.ip.zstaticcdn.com:80`;
           </div>
           
           <div style="background:#f3e8ff; padding:15px; border-radius:8px; border:1px solid #e9d5ff; margin-bottom:20px;">
-            <h3 style="margin-top:0; color:#6b21a8; display:flex; justify-content:space-between; align-items:center;">
-                💼 Web3 钱包与转账 (Cycle Ledger)
-            </h3>
+            <h3 style="margin-top:0; color:#6b21a8;">💼 Web3 钱包与转账 (Cycle Ledger)</h3>
             <div class="form-group">
                 <label>本站出块奖励收款钱包地址 (自动挖矿 Cycle)</label>
                 <input type="text" id="cfg_miner_wallet" value="${sys.miner_wallet || ''}" placeholder="例如输入自定义字符串或 0x 公钥">
@@ -2107,6 +2117,7 @@ echo "✅ Linux 探针安装成功！热重载功能已启用。"
             const ast = calcServerAsset(s, nowMs).amount;
             currentAsset += isNaN(ast) ? 0 : ast;
         }
+        // 增加本地资产上限，防止无限累加
         currentAsset = Math.min(currentAsset, 100000000); 
         
         ctx.waitUntil(mineAndGossip(currentAsset, allS.length));
@@ -2162,6 +2173,7 @@ echo "✅ Linux 探针安装成功！热重载功能已启用。"
         const rxField = sys.auto_reset_traffic === 'true' ? 'monthly_rx' : 'net_rx';
         const txField = sys.auto_reset_traffic === 'true' ? 'monthly_tx' : 'net_tx';
         
+        // --- 完整保留详情页的换行与缩排 ---
         const detailHtml = `<!DOCTYPE html>
         <html>
         <head>
@@ -2721,10 +2733,18 @@ echo "✅ Linux 探针安装成功！热重载功能已启用。"
             <h1 style="margin:0;">${sys.site_title}</h1>
             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
               <div class="view-controls">
-                <button class="toggle-btn active" id="btn-card" onclick="switchView('card')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg> 卡片</button>
-                <button class="toggle-btn" id="btn-table" onclick="switchView('table')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg> 表格</button>
-                <button class="toggle-btn" id="btn-map" onclick="switchView('map')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg> 地图</button>
-                <button class="toggle-btn" id="btn-block" onclick="switchView('block')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> 链上区块</button>
+                <button class="toggle-btn active" id="btn-card" onclick="switchView('card')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg> 卡片
+                </button>
+                <button class="toggle-btn" id="btn-table" onclick="switchView('table')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg> 表格
+                </button>
+                <button class="toggle-btn" id="btn-map" onclick="switchView('map')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg> 地图
+                </button>
+                <button class="toggle-btn" id="btn-block" onclick="switchView('block')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> 链上区块
+                </button>
               </div>
               <a href="/admin" class="admin-btn">${sys.admin_title}</a>
             </div>
