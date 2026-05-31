@@ -83,7 +83,6 @@ export default {
         try { await env.DB.prepare(`ALTER TABLE blockchain_ledger ADD COLUMN total_difficulty INTEGER DEFAULT 0`).run(); } catch(e){}
         try { await env.DB.prepare(`ALTER TABLE blockchain_ledger ADD COLUMN status INTEGER DEFAULT 1`).run(); } catch(e){}
 
-        // [补丁 A]: 增强型检查点快照表 (支持哈希签名校验)
         await env.DB.prepare(`
           CREATE TABLE IF NOT EXISTS checkpoints (
             slot_id INTEGER PRIMARY KEY, 
@@ -173,9 +172,10 @@ export default {
     };
 
     // ==========================================
-    // [补丁 B] 数据库重试机制与全局事务封装 (Atomicity)
+    // 数据库重试机制与全局事务封装 (Atomicity)
     // ==========================================
     const executeBatchWithRetry = async (batchStmts, maxRetries = 3) => {
+        if (!batchStmts || batchStmts.length === 0) return true;
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 await env.DB.batch(batchStmts);
@@ -269,6 +269,9 @@ export default {
         return peers;
     };
 
+    // ==========================================
+    // [补丁 B] VRF 确定性选主与强排序 
+    // ==========================================
     const getValidLeadersForSlot = async (slotId) => {
         const { results: topPeers } = await env.DB.prepare(`
             SELECT domain FROM blockchain_peers 
@@ -277,33 +280,47 @@ export default {
         `).bind(Date.now() - 86400000).all();
         
         if (!topPeers || topPeers.length === 0) return [SEED_NODE];
-        const baseIndex = slotId % topPeers.length;
-        const leaders = [topPeers[baseIndex].domain];
         
+        // 伪随机可验证函数 (Pseudo-VRF)
+        const hashHex = await miniHash(slotId + "-leader-seed");
+        const pseudoRandom = parseInt(hashHex.substring(0, 8), 16);
+        const baseIndex = pseudoRandom % topPeers.length;
+        
+        const leaders = [topPeers[baseIndex].domain];
         if (topPeers.length > 1) {
-            leaders.push(topPeers[(baseIndex + 1) % topPeers.length].domain);
+            leaders.push(topPeers[(baseIndex + 1) % topPeers.length].domain); // 第二顺位递补
         }
         return leaders;
     };
 
     // ==========================================
-    // 内存预测计算状态根 (State-Guard Prediction)
+    // [补丁 A] 内存沙盒计算与非法交易清洗 (Atomic TX Evaluator)
     // ==========================================
-    const predictStateRoot = async (txs) => {
+    const evaluateTxs = async (txs) => {
         const { results: wallets } = await env.DB.prepare('SELECT address, balance FROM blockchain_wallets').all();
         let balances = new Map();
         wallets.forEach(w => balances.set(w.address, w.balance));
 
+        let validTxs = [];
+        let stateDiff = new Map();
+
         for (const tx of txs) {
             if (!tx || !tx.id || tx.amount <= 0) continue;
             const amt = parseFloat(tx.amount);
-            if (tx.from) {
+            
+            // 剔除任何导致负余额的非法交易
+            if (tx.type !== 'COINBASE' && tx.from) {
                 const currentFrom = balances.get(tx.from) || 0;
-                if (currentFrom >= amt) balances.set(tx.from, currentFrom - amt);
+                if (currentFrom < amt) continue; 
+                balances.set(tx.from, currentFrom - amt);
+                stateDiff.set(tx.from, (stateDiff.get(tx.from) || 0) - amt);
             }
+            
             if (tx.to) {
                 balances.set(tx.to, (balances.get(tx.to) || 0) + amt);
+                stateDiff.set(tx.to, (stateDiff.get(tx.to) || 0) + amt);
             }
+            validTxs.push(tx);
         }
         
         let finalWallets = Array.from(balances.entries())
@@ -312,25 +329,22 @@ export default {
             .sort((a, b) => a.address === b.address ? 0 : (a.address < b.address ? -1 : 1));
             
         const stateStr = finalWallets.map(w => `${w.address}:${w.balance.toFixed(6)}`).join('|');
-        return await miniHash(stateStr);
+        const state_root = await miniHash(stateStr);
+
+        return { validTxs, stateDiff, state_root };
     };
 
-    // [补丁 B]: 提取构建 Statement, 而非直接执行，确保事务捆绑
-    const getTxsStateStmts = (txs) => {
-        if (!txs || txs.length === 0) return [];
+    // 在确认生成块或接收块后，生成捆绑事务 Statement
+    const getTxsStateStmts = (allTxs, stateDiffMap) => {
         let batchStmts = [];
-        let stateDiff = {}; 
-        
-        for (const tx of txs) {
-            if (!tx || !tx.id || tx.amount <= 0) continue;
-            const amt = parseFloat(tx.amount);
-            if (tx.from) stateDiff[tx.from] = (stateDiff[tx.from] || 0) - amt;
-            if (tx.to) stateDiff[tx.to] = (stateDiff[tx.to] || 0) + amt;
-            
-            batchStmts.push(env.DB.prepare(`DELETE FROM mempool WHERE tx_id = ?`).bind(tx.id));
+        // 清理被打包池覆盖的所有 TX (不管合法非法，既然已被处理则全踢出)
+        for (const tx of allTxs) {
+            if (tx && tx.id) {
+                batchStmts.push(env.DB.prepare(`DELETE FROM mempool WHERE tx_id = ?`).bind(tx.id));
+            }
         }
 
-        for (const [addr, diff] of Object.entries(stateDiff)) {
+        for (const [addr, diff] of stateDiffMap.entries()) {
             if (diff !== 0) {
                 batchStmts.push(env.DB.prepare(`
                     INSERT INTO blockchain_wallets (address, balance) 
@@ -340,12 +354,6 @@ export default {
             }
         }
         return batchStmts;
-    };
-
-    const computeStateRoot = async () => {
-      const { results: wallets } = await env.DB.prepare('SELECT address, balance FROM blockchain_wallets ORDER BY address ASC').all();
-      const stateStr = wallets.filter(w => w.balance > 0).map(w => `${w.address}:${w.balance.toFixed(6)}`).join('|');
-      return await miniHash(stateStr);
     };
 
     // ==========================================
@@ -376,7 +384,7 @@ export default {
                                 if (!tx || !tx.id || executed.has(tx.id)) continue;
                                 const amount = parseFloat(tx.amount) || 0;
                                 if (amount <= 0) continue;
-                                if (tx.from) {
+                                if (tx.type !== 'COINBASE' && tx.from) {
                                     const currentFromBal = newBalances[tx.from] || 0;
                                     if (currentFromBal < amount) continue; 
                                     newBalances[tx.from] = currentFromBal - amount;
@@ -384,10 +392,6 @@ export default {
                                 if (tx.to) newBalances[tx.to] = (newBalances[tx.to] || 0) + amount;
                                 executed.add(tx.id);
                             }
-                        }
-                        
-                        if (b.slot_id % 100 === 0 && pl.state_root) {
-                            await env.DB.prepare('INSERT OR IGNORE INTO checkpoints (slot_id, state_root, block_hash) VALUES (?, ?, ?)').bind(b.slot_id, pl.state_root, b.block_hash).run();
                         }
                     } catch(e) {}
                 }
@@ -428,21 +432,30 @@ export default {
     ctx.waitUntil(checkAndRebuildLedger());
 
     // ==========================================
-    // 优雅分叉切换 (Graceful Fork Resolution)
+    // [补丁 C] 优雅分叉切换 (Graceful Fork Resolution) + Finality Guard
     // ==========================================
     const resolveFork = async (peerDomain, sinceSlot) => {
         try {
+            const localTopRow = await env.DB.prepare('SELECT slot_id FROM blockchain_ledger WHERE status = 1 ORDER BY slot_id DESC LIMIT 1').first();
+            const localHeight = localTopRow ? localTopRow.slot_id : 0;
+
             const syncRes = await fetchWithTimeSync(`${peerDomain}/api/consensus/sync?since_slot=${sinceSlot}`);
             if (!syncRes.ok) return;
             const syncData = await syncRes.json();
             if (!syncData.blocks || syncData.blocks.length === 0) return;
 
+            const forkStartSlot = syncData.blocks[0].slot_id;
+            
+            // 终局性红线保护：绝不允许回滚超过确认深度的历史
+            if (localHeight - forkStartSlot >= FINALITY_DEPTH) {
+                console.error(`Panic: Fork attempt at slot ${forkStartSlot} violates finality depth (local height: ${localHeight}). Discarding fork.`);
+                return;
+            }
+
             let forkResolved = false;
             let batchStmts = [];
             
-            const forkStartSlot = syncData.blocks[0].slot_id;
-            
-            // [补丁 D] 事务原子替换防闪烁
+            // 事务原子替换防闪烁
             batchStmts.push(env.DB.prepare(`UPDATE blockchain_ledger SET status = 0 WHERE slot_id >= ?`).bind(forkStartSlot));
 
             for (const b of syncData.blocks) {
@@ -454,13 +467,12 @@ export default {
             }
 
             if (forkResolved && batchStmts.length > 0) {
-                for (let i = 0; i < batchStmts.length; i += 50) {
-                    await executeBatchWithRetry(batchStmts.slice(i, i + 50));
+                const batchSuccess = await executeBatchWithRetry(batchStmts);
+                if (batchSuccess) {
+                    await env.DB.prepare(`DELETE FROM blockchain_ledger WHERE status = 0`).run();
+                    await env.DB.prepare("UPDATE settings SET value='true' WHERE key='rebuild_ledger'").run();
+                    await rebuildBalances();
                 }
-                
-                await env.DB.prepare(`DELETE FROM blockchain_ledger WHERE status = 0`).run();
-                await env.DB.prepare("UPDATE settings SET value='true' WHERE key='rebuild_ledger'").run();
-                await rebuildBalances();
             }
         } catch(e) {
             console.error("Fork Resolution Error:", e);
@@ -597,10 +609,12 @@ export default {
                 }
 
                 const pl = JSON.parse(block.payload);
+                let evalResult = { validTxs: [], stateDiff: new Map() };
 
+                // [补丁 A] State-Guard: 预测执行状态树验证，自动剔除双花非法交易
                 if (pl.txs && pl.state_root) {
-                    const predictedRoot = await predictStateRoot(pl.txs);
-                    if (predictedRoot !== pl.state_root) {
+                    evalResult = await evaluateTxs(pl.txs);
+                    if (evalResult.state_root !== pl.state_root) {
                         return consensusResponse('State Root Mismatch! Proposal contains invalid math. Block rejected.', 409);
                     }
                 }
@@ -613,7 +627,6 @@ export default {
                 const blockDifficulty = parseInt(block.total_difficulty || 0);
 
                 if (block.parent_hash !== localPrevHash && block.slot_id > 1) {
-                    // [补丁 C] 连续 N 个 Slot 的观察期防止抖动
                     if (blockDifficulty > localDifficulty) {
                         let obsCount = (globalThis.forkObservations.get(block.proposer_domain) || 0) + 1;
                         globalThis.forkObservations.set(block.proposer_domain, obsCount);
@@ -655,23 +668,25 @@ export default {
                         ON CONFLICT(domain) DO UPDATE SET vps_count=excluded.vps_count, total_asset=excluded.total_asset, last_seen=MAX(last_seen, excluded.last_seen)
                     `).bind(block.proposer_domain, parseInt(pl.vps_count)||0, safeTotalAsset, Date.now()));
                     
+                    // 将合法执行的记录推入同一事务
                     if (pl.txs && pl.txs.length > 0) {
-                        allStmts.push(...getTxsStateStmts(pl.txs));
-                    }
-
-                    if (block.slot_id % 100 === 0 && pl.state_root) {
-                        const { results: wallets } = await env.DB.prepare('SELECT address, balance FROM blockchain_wallets WHERE balance > 0').all();
-                        const snapMap = {};
-                        wallets.forEach(w => snapMap[w.address] = w.balance);
-                        allStmts.push(env.DB.prepare('INSERT OR REPLACE INTO checkpoints (slot_id, state_root, state_snapshot, block_hash, signature) VALUES (?, ?, ?, ?, ?)').bind(block.slot_id, pl.state_root, JSON.stringify(snapMap), block.block_hash, block.signature || ''));
+                        allStmts.push(...getTxsStateStmts(pl.txs, evalResult.stateDiff));
                     }
 
                     const batchSuccess = await executeBatchWithRetry(allStmts);
+                    
                     if (!batchSuccess) {
                         return consensusResponse('Database Transaction Failed', 500);
                     }
 
                     globalThis.forkObservations.delete(block.proposer_domain);
+
+                    if (block.slot_id % 100 === 0 && pl.state_root) {
+                        const { results: wallets } = await env.DB.prepare('SELECT address, balance FROM blockchain_wallets WHERE balance > 0').all();
+                        const snapMap = {};
+                        wallets.forEach(w => snapMap[w.address] = w.balance);
+                        await env.DB.prepare('INSERT OR REPLACE INTO checkpoints (slot_id, state_root, state_snapshot, block_hash, signature) VALUES (?, ?, ?, ?, ?)').bind(block.slot_id, pl.state_root, JSON.stringify(snapMap), block.block_hash, block.signature || '').run();
+                    }
 
                     if (!globalThis.gossipCache) globalThis.gossipCache = new Set();
                     if (!globalThis.gossipCache.has(block.block_hash)) {
@@ -763,10 +778,12 @@ export default {
                     blockTxs.push({ id: coinbaseId, type: 'COINBASE', to: sys.miner_wallet, amount: 1, timestamp: currentNetTime });
                 }
 
-                // 内存中预测执行生成准确状态树根
-                const state_root = await predictStateRoot(blockTxs);
+                // 内存中提取合法交易树根，自动剥离垃圾
+                const evalResult = await evaluateTxs(blockTxs);
+                const state_root = evalResult.state_root;
+                const finalBlockTxs = blockTxs; 
                 
-                const payloadStr = JSON.stringify({ vps_count: localVpsCount, total_asset: localAsset, txs: blockTxs, state_root });
+                const payloadStr = JSON.stringify({ vps_count: localVpsCount, total_asset: localAsset, txs: finalBlockTxs, state_root });
                 const hash = await miniHash(`${currentSlot}-${parentHash}-${host}-${payloadStr}`);
                 const signature = await miniHash(`${host}-${currentSlot}-${payloadStr}`);
 
@@ -776,7 +793,7 @@ export default {
                     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                 `).bind(currentSlot, host, hash, parentHash, payloadStr, currentNetTime, currentDifficulty));
                 
-                allStmts.push(...getTxsStateStmts(blockTxs));
+                allStmts.push(...getTxsStateStmts(finalBlockTxs, evalResult.stateDiff));
 
                 const batchSuccess = await executeBatchWithRetry(allStmts);
                 
@@ -844,7 +861,8 @@ export default {
                                         `).bind(b.slot_id, b.proposer_domain, b.block_hash, b.parent_hash || '', b.payload, b.timestamp || getNetworkTime(), b.total_difficulty || 0));
                                         
                                         const pl = JSON.parse(b.payload);
-                                        allStmts.push(...getTxsStateStmts(pl.txs || []));
+                                        const evalRes = await evaluateTxs(pl.txs || []);
+                                        allStmts.push(...getTxsStateStmts(pl.txs || [], evalRes.stateDiff));
                                         
                                         const safeTotalAsset = Math.min(parseFloat(pl.total_asset)||0, 500000);
                                         allStmts.push(env.DB.prepare(`INSERT INTO blockchain_peers (domain, vps_count, total_asset, last_seen) VALUES (?, ?, ?, ?) ON CONFLICT(domain) DO UPDATE SET vps_count=excluded.vps_count, total_asset=excluded.total_asset, last_seen=MAX(last_seen, excluded.last_seen)`).bind(b.proposer_domain, parseInt(pl.vps_count)||0, safeTotalAsset, b.timestamp || getNetworkTime()));
@@ -992,7 +1010,7 @@ export default {
       .theme4 .os-text { color: #eee; }
 
       body.theme5 { background-color: #050505; color: #0ff; font-family: 'Courier New', Courier, monospace; }
-      .theme5 .vps-card, .theme5 .global-stats, .header-card, .theme5 .chart-card { background: #0b0c10; border: 1px solid #f0f; border-radius: 0; box-shadow: 0 0 10px rgba(255, 0, 255, 0.2); color: #fff; }
+      .theme5 .vps-card, .theme5 .global-stats, .theme5 .header-card, .theme5 .chart-card { background: #0b0c10; border: 1px solid #f0f; border-radius: 0; box-shadow: 0 0 10px rgba(255, 0, 255, 0.2); color: #fff; }
       .theme5 .vps-card:hover { box-shadow: 0 0 20px rgba(0, 255, 255, 0.5); border-color: #0ff; }
       .theme5 .group-header { color: #f0f; border-left: 5px solid #0ff; text-shadow: 0 0 5px #f0f; }
       .theme5 .stat-val, .theme5 .g-val, .theme5 .card-title { color: #0ff; text-shadow: 0 0 5px #0ff; }
@@ -2488,13 +2506,14 @@ echo "✅ Linux 探针安装成功！热重载功能已启用。"
               blockExplorerRows += `<tr>
                   <td><b style="color:#10b981;"># ${b.slot_id}</b></td>
                   <td><span style="color:#3b82f6; font-weight:600;">${cleanProposer}</span></td>
-                  <td style="font-family:monospace; font-size:11px; color:#8b949e;" title="Total Difficulty: ${b.total_difficulty || 0}">${b.block_hash}</td>
+                  <td style="font-family:monospace; font-size:11px; color:#8b949e;">${b.block_hash}</td>
+                  <td><b style="color:#f59e0b;" title="Chain Weight/Difficulty">${b.total_difficulty || 0}</b></td>
                   <td>${txsHtml}</td>
                   <td style="color:#64748b; font-size:12px;">${bDate}</td>
               </tr>`;
           }
       } catch(e){}
-      if (!blockExplorerRows) blockExplorerRows = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">暂无区块数据，等待网络共识...</td></tr>';
+      if (!blockExplorerRows) blockExplorerRows = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#888;">暂无区块数据，等待网络共识...</td></tr>';
 
       if (isAjax) {
           const ajaxResponse = `
@@ -2656,7 +2675,7 @@ echo "✅ Linux 探针安装成功！热重载功能已启用。"
                 <div class="table-responsive" style="background:white; border-radius:12px; padding:10px; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
                   <table class="custom-table">
                     <thead>
-                      <tr><th>区块高度 (Slot)</th><th>出块见证人</th><th>区块哈希</th><th>打包交易数</th><th>见证时间 (UTC+8)</th></tr>
+                      <tr><th>区块高度 (Slot)</th><th>出块见证人</th><th>区块哈希</th><th>总难度(TD)</th><th>打包交易数</th><th>见证时间 (UTC+8)</th></tr>
                     </thead>
                     <tbody id="table-blocks-body">
                       ${blockExplorerRows}
