@@ -95,3 +95,246 @@
 直接复制该命令，在你的目标 VPS 上（需 Root 权限）运行即可：
 ```bash
 curl -sL [https://你的域名.workers.dev/install.sh](https://你的域名.workers.dev/install.sh) | bash -s <SERVER_ID> <API_SECRET>
+
+```
+
+*（提示：对于 Alpine 系统，后台会自动生成带 `?os=alpine` 的专属链接，无缝兼容 OpenRC）*
+
+探针脚本会自动注册为系统服务 (`cf-probe.service` 或 `cf-probe`)，并在后台静默运行，根据你后台设定的频率自动上报数据。
+
+---
+
+## 🛠️ 高级自定义特效注入 (Advanced Customization)
+
+本项目为喜欢折腾的开发者预留了最高权限的魔改入口。进入后台 **全局设置 -> 前端主题风格 -> 选择“6. 完全自定义 CSS”**：
+
+* **自定义 CSS**：重写面板的所有样式，支持背景、卡片透明度、字体颜色等。
+* ** 注入**：你可以引入外部的 Google Fonts、TailwindCSS CDN 等。
+* **Script 注入**：编写原生 JavaScript 接管页面逻辑，比如增加动态粒子背景、甚至通过设置 `body { display: none; }` 隐藏原生页面，利用 AJAX 接口数据用你自己的前端框架重绘大盘。
+
+### ✨ 自定义二次元透明主题 CSS 演示
+
+将以下代码填入后台的 **「自定义 CSS 代码」** 输入框中，即可实现超清动漫壁纸与全站半透明毛玻璃卡片效果：
+
+```css
+/* 1. 网页全局二次元背景图 */
+body.theme6 {
+  background: url('[https://i.33xp.cn/__imgapi.cn__/__imgapi.cn__5d19cf2105e31.jpg](https://i.33xp.cn/__imgapi.cn__/__imgapi.cn__5d19cf2105e31.jpg)') no-repeat center center fixed !important;
+  background-size: cover !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* 2. 背景暗色蒙版，提高可读性 */
+body.theme6::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.2); 
+    z-index: -1;
+}
+
+/* 3. 卡片毛玻璃半透明效果 (包含详情页) */
+.theme6 .vps-card, 
+.theme6 .global-stats, 
+.theme6 .custom-table, 
+.theme6 .header,
+.theme6 .view-controls,
+.theme6 .header-card,
+.theme6 .chart-card {
+  background-color: rgba(255, 255, 255, 0.65) !important; 
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.3s ease;
+}
+
+/* 4. 悬停反馈 (更具科技感的发光边框) */
+.theme6 .vps-card:hover,
+.theme6 .chart-card:hover {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 0 20px rgba(33, 186, 69, 0.2) !important;
+  border-color: rgba(33, 186, 69, 0.4) !important;
+}
+
+/* 5. 进度条统一改为 Nezha 绿色 */
+.theme6 .stat-bar > div,
+.theme6 #disk-bar {
+  background-color: #21ba45 !important;
+}
+
+/* 6. 文字颜色与字体适配 */
+.theme6 .stat-label, 
+.theme6 .g-label, 
+.theme6 .card-meta, 
+.theme6 .info-label { 
+  color: #555 !important; 
+}
+
+.theme6 .stat-val, 
+.theme6 .g-val, 
+.theme6 .card-title-text, 
+.theme6 .info-value, 
+.theme6 .chart-card h3,
+.theme6 .speed-val { 
+  color: #000 !important; 
+  font-family: 'Consolas', 'Monaco', monospace !important;
+}
+
+.theme6 .group-header { 
+  color: #fff !important; 
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+}
+
+/* 7. 优化滚动条样式 */
+.theme6 ::-webkit-scrollbar { width: 6px; height: 6px; }
+.theme6 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+.theme6 ::-webkit-scrollbar-thumb:hover { background: rgba(33, 186, 69, 0.5); }
+
+/* 8. 图表入场动画 */
+.theme6 .chart-card {
+    animation: fadeInUp 0.6s ease-out;
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+```
+
+### ✨ 炫酷动态特效注入 (0 依赖纯原生)
+
+如果你喜欢二次元或更加生动的展示界面，可以将以下代码完全复制，并粘贴到管理后台的 **「自定义底部 Script 注入」** 输入框中。这段脚本包含了多种精美的特效，**全部由纯原生 JavaScript 和 Canvas 物理引擎手搓而成，极速渲染且永久有效！**
+
+* 🌸 **樱花飘落**：使用纯数学贝塞尔曲线动态绘制花瓣。
+* ✨ **星光拖尾**：随鼠标移动生成的炫彩粒子跟随拖尾。
+* ❤️ **爱心浮动**：鼠标点击页面任意位置，生成随机颜色的爱心并上浮。
+* 🎵 **背景音乐播放**：实现网易云外链作为背景音乐自动单曲播放（可自行替换音乐 ID）。
+
+```html
+<audio id="bgm" autoplay loop preload="auto" style="display:none;">
+    <source src="[https://music.163.com/song/media/outer/url?id=2614307770.mp3](https://music.163.com/song/media/outer/url?id=2614307770.mp3)" type="audio/mpeg">
+</audio>
+
+<script>
+// 1. 强制自动播放逻辑 (监听用户交互触发)
+window.addEventListener('click', () => {
+    const audio = document.getElementById('bgm');
+    if (audio.paused) {
+        audio.play().catch(e => console.log("等待用户交互开始播放"));
+    }
+}, { once: true });
+
+// 2. 🌸 纯原生 Canvas 樱花飘落特效
+!function(){
+  var canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999997";
+  document.body.appendChild(canvas);
+  var ctx = canvas.getContext("2d"), w = window.innerWidth, h = window.innerHeight;
+  canvas.width = w; canvas.height = h;
+  window.addEventListener("resize", function(){ w=window.innerWidth; h=window.innerHeight; canvas.width=w; canvas.height=h; });
+  var petals = [];
+  for(var i=0; i<40; i++) petals.push({ x: Math.random()*w, y: Math.random()*h, vx: Math.random()*0.5+0.5, vy: Math.random()*1+1, angle: Math.random()*Math.PI*2, spin: Math.random()*0.05-0.025, size: Math.random()*4+5 });
+  function render(){
+    ctx.clearRect(0,0,w,h);
+    for(var i=0; i<petals.length; i++){
+      var p = petals[i];
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+      ctx.beginPath(); ctx.moveTo(0, -p.size);
+      ctx.bezierCurveTo(p.size, -p.size, p.size, p.size, 0, p.size);
+      ctx.bezierCurveTo(-p.size, p.size, -p.size, -p.size, 0, -p.size);
+      ctx.fillStyle = "rgba(255, 183, 197, 0.7)"; ctx.fill(); ctx.restore();
+      p.x += p.vx; p.y += p.vy; p.angle += p.spin;
+      if(p.y > h || p.x > w) { p.y = -20; p.x = Math.random()*w; }
+    }
+    requestAnimationFrame(render);
+  }
+  render();
+}();
+
+// 3. ✨ 纯原生 Canvas 鼠标烟花/星光拖尾特效
+!function(){
+  var canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999998";
+  document.body.appendChild(canvas);
+  var ctx = canvas.getContext("2d"), w = window.innerWidth, h = window.innerHeight;
+  canvas.width = w; canvas.height = h;
+  window.addEventListener("resize", function(){ w=window.innerWidth; h=window.innerHeight; canvas.width=w; canvas.height=h; });
+  var particles = [], mouse = {x: -100, y: -100};
+  window.addEventListener("mousemove", function(e){ 
+    mouse.x=e.clientX; mouse.y=e.clientY; 
+    particles.push({x:mouse.x, y:mouse.y, vx:Math.random()*2-1, vy:Math.random()*2-1, size:Math.random()*3+1.5, color:"hsl("+(Math.random()*360)+", 100%, 75%)"}); 
+  });
+  function render(){
+    ctx.clearRect(0,0,w,h);
+    for(var i=0; i<particles.length; i++){
+      var p = particles[i];
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fillStyle=p.color; ctx.fill();
+      p.x += p.vx; p.y += p.vy; p.size *= 0.92;
+    }
+    particles = particles.filter(function(p){ return p.size > 0.5; });
+    requestAnimationFrame(render);
+  }
+  render();
+}();
+
+// 4. ❤️ 纯原生 DOM 鼠标点击爱心上浮特效
+!function(e,t,a){function n(){c(".heart{width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: fixed;}.heart:after{top: -5px;}.heart:before{left: -5px;}"),o(),r()}function r(){for(var e=0;e<d.length;e++)d[e].alpha<=0?(t.body.removeChild(d[e].el),d.splice(e,1)):(d[e].y--,d[e].scale+=.004,d[e].alpha-=.013,d[e].el.style.cssText="left:"+d[e].x+"px;top:"+d[e].y+"px;opacity:"+d[e].alpha+";transform:scale("+d[e].scale+","+d[e].scale+") rotate(45deg);background:"+d[e].color+";z-index:9999999");requestAnimationFrame(r)}function o(){var t="function"==typeof e.onclick&&e.onclick;e.onclick=function(e){t&&t(),i(e)}}function i(e){var a=t.createElement("div");a.className="heart",d.push({el:a,x:e.clientX-5,y:e.clientY-5,scale:1,alpha:1,color:s()}),t.body.appendChild(a)}function c(e){var a=t.createElement("style");a.type="text/css";try{a.appendChild(t.createTextNode(e))}catch(t){a.styleSheet.cssText=e}t.getElementsByTagName("head")[0].appendChild(a)}function s(){return"rgb("+~~(255*Math.random())+","+~~(255*Math.random())+","+~~(255*Math.random())+")"}var d=[];e.requestAnimationFrame=function(){return e.requestAnimationFrame||e.webkitRequestAnimationFrame||e.mozRequestAnimationFrame||e.oRequestAnimationFrame||e.msRequestAnimationFrame||function(e){setTimeout(e,1e3/60)}}(),n()}(window,document);
+</script>
+
+```
+
+*注：你可以使用 `https://imgapi.cn/api.php?fl=dongman&=4k` 这类 API 接口实现背景图片的自动随机轮换。*
+
+---
+
+## 🔔 Telegram 离线机器人告警设置
+
+1. **获取 Token**：在 Telegram 找 `@BotFather` 创建机器人并拿到 Token。
+2. **获取 Chat ID**：在 Telegram 找 `@userinfobot` 发条消息，获取你的 ID。
+3. **配置**：
+* 登录你的探针后台 `/admin`。
+* 在 **Telegram 离线告警设置** 区域，填入 Token 和 Chat ID。
+* 将“开启通知”设为 **开启告警**。
+* 点击 **保存全局设置**。
+
+
+4. **测试**：如果你关掉一台 VPS 的 Agent，大约 2-3 分钟内，你的 Telegram 就会收到该节点的离线报警信息。当 Agent 重新启动，也会收到恢复通知。
+
+*(注意事项：离线判断标准代码中设定为 300 秒未收到上报即发送告警。告警状态存储在数据库中，节点掉线只会发一次通知，恢复后再掉线才会触发新告警。)*
+
+---
+
+## ⚙️ 探针卸载 (Uninstall Agent)
+
+如果需要从被控端 VPS 卸载探针服务，请在 VPS 终端（Root权限）执行以下命令：
+
+**Debian/Ubuntu/CentOS (Systemd):**
+
+```bash
+systemctl stop cf-probe.service
+systemctl disable cf-probe.service
+rm /etc/systemd/system/cf-probe.service
+rm /usr/local/bin/cf-probe.sh
+systemctl daemon-reload
+
+```
+
+**Alpine (OpenRC):**
+
+```bash
+rc-service cf-probe stop
+rc-update del cf-probe default
+rm /etc/init.d/cf-probe
+rm /usr/local/bin/cf-probe.sh
+
+```
+
+## 📄 License
+
+MIT License
+
+```
+
+```
