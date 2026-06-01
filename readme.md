@@ -117,88 +117,81 @@ curl -sL [https://你的域名.workers.dev/install.sh](https://你的域名.work
 将以下代码填入后台的 **「自定义 CSS 代码」** 输入框中，即可实现超清动漫壁纸与全站半透明毛玻璃卡片效果：
 
 ```css
-/* 1. 网页全局二次元背景图 */
+/* 1. 网页全局背景 */
 body.theme6 {
-  background: url('[https://i.33xp.cn/__imgapi.cn__/__imgapi.cn__5d19cf2105e31.jpg](https://i.33xp.cn/__imgapi.cn__/__imgapi.cn__5d19cf2105e31.jpg)') no-repeat center center fixed !important;
+  background: url('https://i.33xp.cn/__imgapi.cn__/__imgapi.cn__5d19cf2105e31.jpg') no-repeat center center fixed !important;
   background-size: cover !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
 }
 
-/* 2. 背景暗色蒙版，提高可读性 */
-body.theme6::before {
-    content: "";
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.2); 
-    z-index: -1;
+/* 2. Canvas 樱花/特效层级提到最高且开启点击穿透 */
+#effect_canvas {
+    z-index: 99999999 !important;
+    pointer-events: none !important;
 }
 
-/* 3. 卡片毛玻璃半透明效果 (包含详情页) */
+/* 3. 材质重构：改用暗黑系全透明光幕（彻底解决吃字、看不清的问题） */
+.theme6 .consensus-panel,
 .theme6 .vps-card, 
 .theme6 .global-stats, 
 .theme6 .custom-table, 
-.theme6 .header,
-.theme6 .view-controls,
 .theme6 .header-card,
-.theme6 .chart-card {
-  background-color: rgba(255, 255, 255, 0.65) !important; 
-  backdrop-filter: blur(10px) !important;
-  -webkit-backdrop-filter: blur(10px) !important;
-  border-radius: 16px !important;
-  border: 1px solid rgba(255, 255, 255, 0.5) !important;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
-  transition: all 0.3s ease;
+.theme6 .custom-table th,
+.theme6 .chart-card,
+.theme6 .modal-content {
+  background: rgba(15, 23, 42, 0.45) !important; /* 优雅的45%半透明深色黑夜底板，压住复杂的背景干扰 */
+  backdrop-filter: none !important; /* 保持100%全透明不浑浊 */
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important; /* 极细的半透明白描边，勾勒出外框 */
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important; 
+  border-radius: 12px !important;
 }
 
-/* 4. 悬停反馈 (更具科技感的发光边框) */
-.theme6 .vps-card:hover,
-.theme6 .chart-card:hover {
-  background-color: rgba(255, 255, 255, 0.85) !important;
-  box-shadow: 0 0 20px rgba(33, 186, 69, 0.2) !important;
-  border-color: rgba(33, 186, 69, 0.4) !important;
+/* 4. 荧光控光文字：在暗色背景下，亮色字体清晰度直接暴增 */
+.theme6 .c-label,
+.theme6 .g-label,
+.theme6 .stat-label,
+.theme6 .card-meta {
+  color: #94a3b8 !important; /* 优雅的浅板岩灰，用于次要标签 */
+  font-weight: 500 !important;
+  text-shadow: none !important;
 }
 
-/* 5. 进度条统一改为 Nezha 绿色 */
-.theme6 .stat-bar > div,
-.theme6 #disk-bar {
-  background-color: #21ba45 !important;
+.theme6 .c-val,
+.theme6 .g-val,
+.theme6 .stat-val,
+.theme6 .card-title-text,
+.theme6 .card-title,
+.theme6 td {
+  color: #f8fafc !important; /* 纯净的月光白，无论背景多复杂都能一眼识别 */
+  font-weight: 600 !important;
+  text-shadow: none !important; 
 }
 
-/* 6. 文字颜色与字体适配 */
-.theme6 .stat-label, 
-.theme6 .g-label, 
-.theme6 .card-meta, 
-.theme6 .info-label { 
-  color: #555 !important; 
+/* 主标题微调（防止顶部标题看不清） */
+.theme6 h1 {
+  color: #ffffff !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5) !important;
 }
 
-.theme6 .stat-val, 
-.theme6 .g-val, 
-.theme6 .card-title-text, 
-.theme6 .info-value, 
-.theme6 .chart-card h3,
-.theme6 .speed-val { 
-  color: #000 !important; 
-  font-family: 'Consolas', 'Monaco', monospace !important;
+/* 5. 进度条背景优化，在暗色下面更加醒目 */
+.theme6 .stat-bar-full {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
 }
 
-.theme6 .group-header { 
-  color: #fff !important; 
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+/* 6. 组件及特殊高亮标签微调 */
+.theme6 .badge-bw { background: rgba(59, 130, 246, 0.8) !important; color: #fff !important; }
+.theme6 .badge-tf { background: rgba(16, 185, 129, 0.8) !important; color: #fff !important; }
+.theme6 span[style*="color:#8b5cf6"], 
+.theme6 span[style*="color: rgb(139, 92, 246)"] {
+  color: #c084fc !important; /* 改为淡紫色荧光 */
+  font-weight: 700 !important;
 }
 
-/* 7. 优化滚动条样式 */
-.theme6 ::-webkit-scrollbar { width: 6px; height: 6px; }
-.theme6 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
-.theme6 ::-webkit-scrollbar-thumb:hover { background: rgba(33, 186, 69, 0.5); }
-
-/* 8. 图表入场动画 */
-.theme6 .chart-card {
-    animation: fadeInUp 0.6s ease-out;
-}
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+/* 7. 确保点击事件可以传导给 body */
+.container {
+    position: relative;
+    z-index: 10;
 }
 
 ```
@@ -213,76 +206,130 @@ body.theme6::before {
 * 🎵 **背景音乐播放**：实现网易云外链作为背景音乐自动单曲播放（可自行替换音乐 ID）。
 
 ```html
-<audio id="bgm" autoplay loop preload="auto" style="display:none;">
-    <source src="[https://music.163.com/song/media/outer/url?id=2614307770.mp3](https://music.163.com/song/media/outer/url?id=2614307770.mp3)" type="audio/mpeg">
-</audio>
-
 <script>
-// 1. 强制自动播放逻辑 (监听用户交互触发)
-window.addEventListener('click', () => {
-    const audio = document.getElementById('bgm');
-    if (audio.paused) {
-        audio.play().catch(e => console.log("等待用户交互开始播放"));
+!function() {
+    // 1. 动态创建并注入音频标签（防止被 AJAX 刷新洗刷掉）
+    if (!document.getElementById('bgm')) {
+        var audio = document.createElement('audio');
+        audio.id = 'bgm';
+        audio.loop = true;
+        audio.preload = 'auto';
+        audio.style.display = 'none';
+        
+        var source = document.createElement('source');
+        source.src = 'https://music.163.com/song/media/outer/url?id=2614307770.mp3';
+        source.type = 'audio/mpeg';
+        
+        audio.appendChild(source);
+        document.body.appendChild(audio);
     }
-}, { once: true });
 
-// 2. 🌸 纯原生 Canvas 樱花飘落特效
-!function(){
-  var canvas = document.createElement("canvas");
-  canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999997";
-  document.body.appendChild(canvas);
-  var ctx = canvas.getContext("2d"), w = window.innerWidth, h = window.innerHeight;
-  canvas.width = w; canvas.height = h;
-  window.addEventListener("resize", function(){ w=window.innerWidth; h=window.innerHeight; canvas.width=w; canvas.height=h; });
-  var petals = [];
-  for(var i=0; i<40; i++) petals.push({ x: Math.random()*w, y: Math.random()*h, vx: Math.random()*0.5+0.5, vy: Math.random()*1+1, angle: Math.random()*Math.PI*2, spin: Math.random()*0.05-0.025, size: Math.random()*4+5 });
-  function render(){
-    ctx.clearRect(0,0,w,h);
-    for(var i=0; i<petals.length; i++){
-      var p = petals[i];
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
-      ctx.beginPath(); ctx.moveTo(0, -p.size);
-      ctx.bezierCurveTo(p.size, -p.size, p.size, p.size, 0, p.size);
-      ctx.bezierCurveTo(-p.size, p.size, -p.size, -p.size, 0, -p.size);
-      ctx.fillStyle = "rgba(255, 183, 197, 0.7)"; ctx.fill(); ctx.restore();
-      p.x += p.vx; p.y += p.vy; p.angle += p.spin;
-      if(p.y > h || p.x > w) { p.y = -20; p.x = Math.random()*w; }
+    // 2. 强力捕获级交互播放逻辑（完美解决多图层阻断与点击失效）
+    function tryPlayBGM() {
+        var bgm = document.getElementById('bgm');
+        if (bgm && bgm.paused) {
+            bgm.play().then(function() {
+                console.log("🎵 BGM 成功通过用户交互触发播放");
+                removeAudioListeners();
+            }).catch(function(e) {
+                console.log("等待更明确的用户交互以允许播放音频...");
+            });
+        } else {
+            removeAudioListeners();
+        }
     }
-    requestAnimationFrame(render);
-  }
-  render();
+
+    function removeAudioListeners() {
+        window.removeEventListener('click', tryPlayBGM, true);
+        window.removeEventListener('touchstart', tryPlayBGM, true);
+    }
+
+    // 使用捕获阶段 (true) 拦截监听，确保点击任何探针卡片或地图都能第一时间触发音频
+    window.addEventListener('click', tryPlayBGM, true);
+    window.addEventListener('touchstart', tryPlayBGM, true);
+
+    // 3. 🌸 纯原生 Canvas 樱花飘落特效
+    var canvasSakura = document.createElement("canvas");
+    canvasSakura.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999997";
+    document.body.appendChild(canvasSakura);
+    var ctxS = canvasSakura.getContext("2d"), w = window.innerWidth, h = window.innerHeight;
+    canvasSakura.width = w; canvasSakura.height = h;
+    window.addEventListener("resize", function(){ w=window.innerWidth; h=window.innerHeight; canvasSakura.width=w; canvasSakura.height=h; });
+    var petals = [];
+    for(var i=0; i<40; i++) petals.push({ x: Math.random()*w, y: Math.random()*h, vx: Math.random()*0.5+0.5, vy: Math.random()*1+1, angle: Math.random()*Math.PI*2, spin: Math.random()*0.05-0.025, size: Math.random()*4+5 });
+    function renderSakura(){
+        ctxS.clearRect(0,0,w,h);
+        for(var i=0; i<petals.length; i++){
+            var p = petals[i];
+            ctxS.save(); ctxS.translate(p.x, p.y); ctxS.rotate(p.angle);
+            ctxS.beginPath(); ctxS.moveTo(0, -p.size);
+            ctxS.bezierCurveTo(p.size, -p.size, p.size, p.size, 0, p.size);
+            ctxS.bezierCurveTo(-p.size, p.size, -p.size, -p.size, 0, -p.size);
+            ctxS.fillStyle = "rgba(255, 183, 197, 0.7)"; ctxS.fill(); ctxS.restore();
+            p.x += p.vx; p.y += p.vy; p.angle += p.spin;
+            if(p.y > h || p.x > w) { p.y = -20; p.x = Math.random()*w; }
+        }
+        requestAnimationFrame(renderSakura);
+    }
+    renderSakura();
+
+    // 4. ✨ 纯原生 Canvas 鼠标烟花/星光拖尾特效
+    var canvasStars = document.createElement("canvas");
+    canvasStars.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999998";
+    document.body.appendChild(canvasStars);
+    var ctxStars = canvasStars.getContext("2d");
+    canvasStars.width = w; canvasStars.height = h;
+    window.addEventListener("resize", function(){ canvasStars.width=w; canvasStars.height=h; });
+    var particles = [], mouse = {x: -100, y: -100};
+    window.addEventListener("mousemove", function(e){ 
+        mouse.x=e.clientX; mouse.y=e.clientY; 
+        particles.push({x:mouse.x, y:mouse.y, vx:Math.random()*2-1, vy:Math.random()*2-1, size:Math.random()*3+1.5, color:"hsl("+(Math.random()*360)+", 100%, 75%)"}); 
+    });
+    function renderStars(){
+        ctxStars.clearRect(0,0,w,h);
+        for(var i=0; i<particles.length; i++){
+            var p = particles[i];
+            ctxStars.beginPath(); ctxStars.arc(p.x, p.y, p.size, 0, Math.PI*2); ctxStars.fillStyle=p.color; ctxStars.fill();
+            p.x += p.vx; p.y += p.vy; p.size *= 0.92;
+        }
+        particles = particles.filter(function(p){ return p.size > 0.5; });
+        requestAnimationFrame(renderStars);
+    }
+    renderStars();
+
+    // 5. ❤️ 纯原生 DOM 鼠标点击爱心上浮特效
+    function initHeart(){
+        injectStyle(".heart{width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: fixed;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+        window.addEventListener('click', function(e) {
+            var el = document.createElement("div");
+            el.className = "heart";
+            d.push({el:el, x:e.clientX-5, y:e.clientY-5, scale:1, alpha:1, color:randomColor()});
+            document.body.appendChild(el);
+        }, true);
+        renderHeart();
+    }
+    var d = [];
+    function renderHeart(){
+        for(var e=0; e<d.length; e++) {
+            if(d[e].alpha<=0){
+                document.body.removeChild(d[e].el);
+                d.splice(e,1);
+            } else {
+                d[e].y--; d[e].scale+=.004; d[e].alpha-=.013;
+                d[e].el.style.cssText="left:"+d[e].x+"px;top:"+d[e].y+"px;opacity:"+d[e].alpha+";transform:scale("+d[e].scale+","+d[e].scale+") rotate(45deg);background:"+d[e].color+";z-index:9999999";
+            }
+        }
+        requestAnimationFrame(renderHeart);
+    }
+    function injectStyle(e){
+        var a=document.createElement("style"); a.type="text/css";
+        try{a.appendChild(document.createTextNode(e))}catch(t){a.styleSheet.cssText=e}
+        document.getElementsByTagName("head")[0].appendChild(a);
+    }
+    function randomColor(){ return "rgb("+~~(255*Math.random())+","+~~(255*Math.random())+","+~~(255*Math.random())+")"; }
+    initHeart();
 }();
-
-// 3. ✨ 纯原生 Canvas 鼠标烟花/星光拖尾特效
-!function(){
-  var canvas = document.createElement("canvas");
-  canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999998";
-  document.body.appendChild(canvas);
-  var ctx = canvas.getContext("2d"), w = window.innerWidth, h = window.innerHeight;
-  canvas.width = w; canvas.height = h;
-  window.addEventListener("resize", function(){ w=window.innerWidth; h=window.innerHeight; canvas.width=w; canvas.height=h; });
-  var particles = [], mouse = {x: -100, y: -100};
-  window.addEventListener("mousemove", function(e){ 
-    mouse.x=e.clientX; mouse.y=e.clientY; 
-    particles.push({x:mouse.x, y:mouse.y, vx:Math.random()*2-1, vy:Math.random()*2-1, size:Math.random()*3+1.5, color:"hsl("+(Math.random()*360)+", 100%, 75%)"}); 
-  });
-  function render(){
-    ctx.clearRect(0,0,w,h);
-    for(var i=0; i<particles.length; i++){
-      var p = particles[i];
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fillStyle=p.color; ctx.fill();
-      p.x += p.vx; p.y += p.vy; p.size *= 0.92;
-    }
-    particles = particles.filter(function(p){ return p.size > 0.5; });
-    requestAnimationFrame(render);
-  }
-  render();
-}();
-
-// 4. ❤️ 纯原生 DOM 鼠标点击爱心上浮特效
-!function(e,t,a){function n(){c(".heart{width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: fixed;}.heart:after{top: -5px;}.heart:before{left: -5px;}"),o(),r()}function r(){for(var e=0;e<d.length;e++)d[e].alpha<=0?(t.body.removeChild(d[e].el),d.splice(e,1)):(d[e].y--,d[e].scale+=.004,d[e].alpha-=.013,d[e].el.style.cssText="left:"+d[e].x+"px;top:"+d[e].y+"px;opacity:"+d[e].alpha+";transform:scale("+d[e].scale+","+d[e].scale+") rotate(45deg);background:"+d[e].color+";z-index:9999999");requestAnimationFrame(r)}function o(){var t="function"==typeof e.onclick&&e.onclick;e.onclick=function(e){t&&t(),i(e)}}function i(e){var a=t.createElement("div");a.className="heart",d.push({el:a,x:e.clientX-5,y:e.clientY-5,scale:1,alpha:1,color:s()}),t.body.appendChild(a)}function c(e){var a=t.createElement("style");a.type="text/css";try{a.appendChild(t.createTextNode(e))}catch(t){a.styleSheet.cssText=e}t.getElementsByTagName("head")[0].appendChild(a)}function s(){return"rgb("+~~(255*Math.random())+","+~~(255*Math.random())+","+~~(255*Math.random())+")"}var d=[];e.requestAnimationFrame=function(){return e.requestAnimationFrame||e.webkitRequestAnimationFrame||e.mozRequestAnimationFrame||e.oRequestAnimationFrame||e.msRequestAnimationFrame||function(e){setTimeout(e,1e3/60)}}(),n()}(window,document);
 </script>
-
 ```
 
 *注：你可以使用 `https://imgapi.cn/api.php?fl=dongman&=4k` 这类 API 接口实现背景图片的自动随机轮换。*
