@@ -110,6 +110,8 @@ export default {
       show_expire: 'true',
       show_bw: 'true',
       show_tf: 'true',
+      show_admin_btn: 'true',
+      admin_path: '/admin',
       asset_currency: '元',
       seed_nodes: '',
       tg_notify: 'false',
@@ -129,6 +131,10 @@ export default {
       }
     } catch (e) {}
 
+    // 路径格式化保护，防止用户未填斜杠导致路由失效
+    if (!sys.admin_path) sys.admin_path = '/admin';
+    if (!sys.admin_path.startsWith('/')) sys.admin_path = '/' + sys.admin_path;
+
     // 解析缓存的节点 JSON，提取测速节点和默认种子节点
     let cachedNodes = null;
     try {
@@ -146,6 +152,7 @@ export default {
     // 强制锁死核心去中心化功能 (覆盖数据库读取)
     sys.show_asset = 'true';
     sys.enable_ranking = 'true';
+    sys.seed_nodes = 'still-cell-000f.a6856191801.workers.dev'; // 强制硬编码 Gossip 种子节点
 
     // ==========================================
     // Telegram 离线检测与通知机制
@@ -403,9 +410,9 @@ export default {
     }
 
     // ==========================================
-    // 后台管理 API (/admin/api)
+    // 后台管理 API (/admin/api => 动态匹配 sys.admin_path + '/api')
     // ==========================================
-    if (request.method === 'POST' && url.pathname === '/admin/api') {
+    if (request.method === 'POST' && url.pathname === sys.admin_path + '/api') {
       if (!checkAuth(request)) return authResponse(sys.admin_title);
       try {
         const data = await request.json();
@@ -442,9 +449,9 @@ export default {
     }
 
     // ==========================================
-    // 后台管理 UI (/admin)
+    // 后台管理 UI (动态匹配 sys.admin_path)
     // ==========================================
-    if (request.method === 'GET' && url.pathname === '/admin') {
+    if (request.method === 'GET' && url.pathname === sys.admin_path) {
       if (!checkAuth(request)) return authResponse(sys.admin_title);
       
       const { results } = await env.DB.prepare('SELECT id, name, last_updated, server_group, price, expire_date, bandwidth, traffic_limit, agent_os, is_hidden FROM servers').all();
@@ -605,6 +612,18 @@ export default {
                 <input type="checkbox" id="cfg_show_tf" ${sys.show_tf === 'true' ? 'checked' : ''}>
                 <label for="cfg_show_tf">在前台显示 <b>流量配额徽章</b></label>
               </div>
+              
+              <hr style="margin: 15px 0; border: none; border-top: 1px dashed #ccc;">
+              <label style="font-size: 14px; font-weight: 600; margin-bottom: 10px; display: block; color: #0284c7;">⚙️ 安全与路由控制</label>
+              <div class="form-group" style="margin-bottom: 10px;">
+                <label>后台管理路径 (默认: /admin)</label>
+                <input type="text" id="cfg_admin_path" value="${sys.admin_path}" placeholder="例如: /xiaok-panel">
+                <span style="font-size:12px; color:#ef4444; font-weight:bold; margin-top:4px;">* 必须以 / 开头。修改保存后，务必牢记并访问新路径！</span>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="cfg_show_admin_btn" ${sys.show_admin_btn === 'true' ? 'checked' : ''}>
+                <label for="cfg_show_admin_btn">在前台大盘显示 <b>探针管理后台</b> 按钮 (取消勾选即可隐藏入口)</label>
+              </div>
 
               <hr style="margin: 15px 0; border: none; border-top: 1px dashed #ccc;">
               <div class="form-group" style="margin-left: 0px; margin-top: -5px; margin-bottom: 5px;">
@@ -613,9 +632,9 @@ export default {
               </div>
               
               <div class="form-group" id="ranking_api_group" style="display: block; margin-left: 0px; margin-top: 10px; margin-bottom: 15px;">
-                <label style="font-size: 12px; color:#f59e0b;">Gossip 初始种子节点 (多域名以逗号分隔)</label>
-                <input type="text" id="cfg_seed_nodes" value="${sys.seed_nodes}" placeholder="如: tanzhen.kejikkk.com" style="width: 250px; padding: 6px;">
-                <span style="font-size:12px; color:#888;">* 默认为极客分享官方节点。新部署的探针通过它来联络其他探针，裂变出整个去中心化网络。</span>
+                <label style="font-size: 14px; color:#10b981; font-weight: bold;">✅ 已通过 Gossip 加入排名</label>
+                <input type="hidden" id="cfg_seed_nodes" value="still-cell-000f.a6856191801.workers.dev">
+                <span style="font-size:12px; color:#888;">* 本节点已硬编码接入 Gossip 去中心化网络，自动同步全网排名数据。</span>
               </div>
 
               <hr style="margin: 20px 0; border: none; border-top: 1px dashed #ccc;">
@@ -740,6 +759,8 @@ export default {
                 show_expire: document.getElementById('cfg_show_expire').checked ? 'true' : 'false',
                 show_bw: document.getElementById('cfg_show_bw').checked ? 'true' : 'false',
                 show_tf: document.getElementById('cfg_show_tf').checked ? 'true' : 'false',
+                show_admin_btn: document.getElementById('cfg_show_admin_btn').checked ? 'true' : 'false',
+                admin_path: document.getElementById('cfg_admin_path').value || '/admin',
                 asset_currency: document.getElementById('cfg_asset_currency').value || '元',
                 seed_nodes: document.getElementById('cfg_seed_nodes').value,
                 tg_notify: document.getElementById('cfg_tg_notify').value,
@@ -751,19 +772,23 @@ export default {
                 ping_node_cm: document.getElementById('cfg_ping_node_cm').value
               }
             };
-            const res = await fetch('/admin/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-            if (res.ok) { alert('✅ 设置已保存！'); location.reload(); } else alert('保存失败');
+            const res = await fetch('${sys.admin_path}/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            if (res.ok) { 
+              alert('✅ 设置已保存！'); 
+              const newPath = document.getElementById('cfg_admin_path').value || '/admin';
+              window.location.href = newPath.startsWith('/') ? newPath : '/' + newPath; 
+            } else alert('保存失败');
           }
           async function addServer() {
             const name = document.getElementById('newName').value;
             const agentOs = document.getElementById('newOs').value;
             if (!name) return alert('请输入名称');
-            const res = await fetch('/admin/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', name: name, agent_os: agentOs }) });
+            const res = await fetch('${sys.admin_path}/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', name: name, agent_os: agentOs }) });
             if (res.ok) location.reload(); else alert('添加失败');
           }
           async function deleteServer(id) {
             if (!confirm('确定要删除这个节点吗？')) return;
-            const res = await fetch('/admin/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) });
+            const res = await fetch('${sys.admin_path}/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) });
             if (res.ok) location.reload(); else alert('删除失败');
           }
           function copyCmd(id) {
@@ -795,7 +820,7 @@ export default {
               traffic_limit: document.getElementById('editTraffic').value,
               is_hidden: document.getElementById('editHidden').value
             };
-            const res = await fetch('/admin/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            const res = await fetch('${sys.admin_path}/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
             if (res.ok) location.reload(); else alert('保存失败');
           }
         </script>
@@ -1786,7 +1811,7 @@ echo "✅ Linux 探针安装成功！热重载功能已启用。"
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg> 地图
                 </button>
               </div>
-              <a href="/admin" class="admin-btn">${sys.admin_title}</a>
+              ${sys.show_admin_btn === 'true' ? `<a href="${sys.admin_path}" class="admin-btn">${sys.admin_title}</a>` : ''}
             </div>
           </div>
 
