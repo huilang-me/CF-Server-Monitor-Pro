@@ -38,6 +38,7 @@
 # ⚡ CF-Server-Monitor-Pro (Serverless 探针增强版)
 
 10台VPS以下可以使用cf版本轻量部署，10台VPS以上建议使用docker部署在免费容器northflank https://github.com/a63414262/server-monitor
+
 基于 Cloudflare Workers 和 D1 数据库构建的零成本、高定制化服务器探针大盘。
 完全白嫖 Cloudflare 的免费 Serverless 资源，无需额外部署任何服务端 VPS！支持多节点大盘展示、单节点详情图表、全平台 Agent 监控与 Telegram 机器人深度交互。
 
