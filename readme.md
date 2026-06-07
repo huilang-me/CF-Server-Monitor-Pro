@@ -300,7 +300,3 @@ Remove-Item -Path C:\ProgramData\CFProbe -Recurse -Force -ErrorAction SilentlyCo
 
 本项目由纯 Serverless 爱好者开发，功能持续迭代中。
 如果你喜欢这个项目，欢迎提交 PR，或者给个 ⭐ **Star** 支持一下！
-
-**License**: MIT License
-
-```
